@@ -1,0 +1,32 @@
+# nodejs
+node_modules
+
+# test
+spec
+jest.config.ts
+
+# eslint
+eslint.config.mjs
+
+# typescript
+tsconfig.json
+tsconfig.lib.json
+
+# dotenv
+.env
+
+# ide
+.DS_Store
+.vscode
+.theia
+.idea
+.devcontainer
+
+# github
+.github
+
+# babel
+babel.config.js
+
+# rollup
+rollup.config.mjs
