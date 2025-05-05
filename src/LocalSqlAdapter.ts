@@ -3,7 +3,9 @@ class LocalSqlAdapter {
 
   public rawConnection?: Database;
 
-  constructor(protected options?: { database?: string }) {
+  public static readonly instances = new Map<string, Database>();
+
+  constructor(protected options?: { name?: string, database?: string, buffer?: ArrayLike<number> }) {
   }
 
   open(callback: (err?: Error) => void): void {
@@ -16,10 +18,15 @@ class LocalSqlAdapter {
     if (this.rawConnection) {
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { database } = this.options;
+    const name = this.options.name || 'local';
+    const rawConnection = LocalSqlAdapter.instances.get(name);
+    if (rawConnection) {
+      this.rawConnection = rawConnection;
+      return;
+    }
     const SQL: SqlJsStatic = await initSqlJs();
-    this.rawConnection = new SQL.Database();
+    LocalSqlAdapter.instances.set(name, new SQL.Database(this.options.buffer))
+    this.rawConnection = LocalSqlAdapter.instances.get(name);
   }
 
   close(callback: (err?: Error) => void): void {
@@ -32,9 +39,6 @@ class LocalSqlAdapter {
   }
 
   async closeAsync() {
-    if (this.rawConnection) {
-      this.rawConnection.close();
-    }
     this.rawConnection = null;
   }
 
