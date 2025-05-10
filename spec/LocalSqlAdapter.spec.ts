@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/jest-globals';
 import { expect } from '@jest/globals';
-import { LocalSqlAdapter } from "@themost/sqljs";
+import { LocalSqlAdapter } from "@themost/sql.js";
 
 describe('LocalSqlAdapter', () => {
     it('should create instance', () => {

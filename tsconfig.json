@@ -16,7 +16,7 @@
       "dom"
     ],
     "paths": {
-      "@themost/sqljs": [
+      "@themost/sql.js": [
         "src"
       ]
     }
