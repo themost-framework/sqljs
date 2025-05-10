@@ -6,4 +6,10 @@ describe('sql.js', () => {
     it('should create instance', () => {
         expect(new LocalSqlAdapter()).toBeInstanceOf(LocalSqlAdapter);
     });
+
+    it('should call custom function', () => {
+        const db = new LocalSqlAdapter();
+        
+    });
+
 });
