@@ -7,9 +7,16 @@ describe('sql.js', () => {
         expect(new LocalSqlAdapter()).toBeInstanceOf(LocalSqlAdapter);
     });
 
-    it('should call custom function', () => {
+    it('should create table', async () => {
         const db = new LocalSqlAdapter();
-        
+        let exists = await db.table('test').existsAsync();
+        expect(exists).toBe(false);
+        await db.table('test').createAsync([
+            {name: 'id', type: 'Counter', primary: true},
+            {name: 'name', type: 'Text'},
+            {name: 'age', type: 'Integer'}
+        ]);
+        exists = await db.table('test').existsAsync();
+        expect(exists).toBe(true);
     });
-
 });

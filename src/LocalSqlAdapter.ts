@@ -8,12 +8,59 @@ import { QueryExpression, QueryField, SqlUtils } from '@themost/query';
 import { LocalSqlFormatter } from './LocalSqlFormatter';
 import { eachSeries, waterfall } from 'async';
 import { LocalSqlAdapterBase } from './LocalSqlAdapterBase';
-import { LocalSqlColumn, LocalSqlDataTable } from './LocalSqlDataTable';
+
+declare interface LocalSqlColumn {
+  name: string;
+  ordinal: number;
+  type: string;
+  nullable: boolean;
+  primary: boolean;
+  size?: number;
+  scale?: number;
+}
+
+declare interface LocalSqlField {
+  name: string;
+  type: string;
+  size?: number;
+  scale?: number;
+  nullable?: boolean;
+  primary?: boolean;
+}
+
+declare interface LocalSqlTable {
+  create(fields: LocalSqlField[], callback: (err: Error) => void): void;
+  createAsync(fields: LocalSqlField[]): Promise<void>;
+  add(fields: LocalSqlField[], callback: (err: Error) => void): void;
+  addAsync(fields: LocalSqlField[]): Promise<void>;
+  change(fields: LocalSqlField[], callback: (err: Error) => void): void;
+  changeAsync(fields: LocalSqlField[]): Promise<void>;
+  exists(callback: (err: Error, result: boolean) => void): void;
+  existsAsync(): Promise<boolean>;
+  version(callback: (err: Error, result: string) => void): void;
+  versionAsync(): Promise<string>;
+  columns(callback: (err: Error, result: LocalSqlColumn[]) => void): void;
+  columnsAsync(): Promise<LocalSqlColumn[]>;
+}
+
+declare interface LocalSqlIndex {
+  name: string;
+  columns: string[];
+}
+
+declare interface LocalSqlIndexCollection {
+  create(name: string, columns: string[], callback: (err: Error, res?: number) => void): void;
+  createAsync(name: string, columns: string[]): Promise<void>;
+  drop(name: string, callback: (err: Error, res?: number) => void): void;
+  dropAsync(name: string): Promise<void>;
+  list(callback: (err: Error, res: LocalSqlIndex[]) => void): void;
+  listAsync(): Promise<LocalSqlIndex[]>;
+}
 
 const GuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const SqlDateRegEx = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d+\+[0-1][0-9]:[0-5][0-9]$/;
 
-declare interface LocalDataTableUpgrade {
+declare interface LocalSqlTableUpgrade {
   add: { name: string, type: string, size?: number, scale?: number, primary?: boolean }[];
   change?: { name: string, type: string, size?: number, scale?: number }[];
   remove?: { name: string, type: string, size?: number, scale?: number }[];
@@ -21,8 +68,17 @@ declare interface LocalDataTableUpgrade {
   model?: string;
   description?: string
   version: string;
-  indexes?: {name: string, columns: string[]}[];
+  indexes?: { name: string, columns: string[] }[];
   updated?: boolean;
+}
+
+declare interface LocalSqlView {
+  create(query: QueryExpression | string, callback: (err: Error) => void): void;
+  createAsync(query: QueryExpression | string): Promise<void>;
+  exists(callback: (err: Error, result: boolean) => void): void;
+  existsAsync(): Promise<boolean>;
+  drop(callback: (err: Error) => void): void;
+  dropAsync(): Promise<void>;
 }
 
 /**
@@ -88,14 +144,14 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
     if (this.rawConnection) {
       return;
     }
-    const name = this.options.name || 'local';
+    const name = (this.options && this.options.name) || 'local';
     const rawConnection = LocalSqlAdapter.instances.get(name);
     if (rawConnection) {
       this.rawConnection = rawConnection;
       return;
     }
     const SQL: SqlJsStatic = await initSqlJs();
-    LocalSqlAdapter.instances.set(name, new SQL.Database(this.options.buffer))
+    LocalSqlAdapter.instances.set(name, new SQL.Database(this.options?.buffer))
     this.rawConnection = LocalSqlAdapter.instances.get(name);
     // add custom functions
     // 1. uuid4
@@ -227,7 +283,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       return s.concat((field.nullable === undefined) ? ' NULL' : (field.nullable ? ' NULL' : ' NOT NULL'));
     }
   }
-  
+
   executeInTransaction(fn: (callback: (err?: Error) => void) => void, callback: (err?: Error) => void): void {
     this.open((err) => {
       if (err) {
@@ -308,15 +364,24 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
   createView(name: string, query: QueryExpression | string, callback: (err?: Error) => void): void {
     this.view(name).create(query, callback);
   }
-  
-  migrate(obj: LocalDataTableUpgrade, callback: (err?: Error) => void): void {
+
+  format(format: string, obj: { name: string, type: string }): string {
+      let result = format;
+      if (/%t/.test(format))
+          result = result.replace(/%t/g, this.formatType(obj));
+      if (/%f/.test(format))
+          result = result.replace(/%f/g, obj.name);
+      return result;
+  }
+
+  migrate(obj: LocalSqlTableUpgrade, callback: (err?: Error) => void): void {
     if (obj == null) {
       return callback();
     }
     const migration = obj;
     // create a copy of columns
     const addColumns = migration.add.slice(0);
-    const format = function (format: string, obj: {name: string, type: string}): string {
+    const format = function (format: string, obj: { name: string, type: string }): string {
       let result = format;
       if (/%t/.test(format))
         result = result.replace(/%t/g, this.formatType(obj));
@@ -597,7 +662,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
         }
       },
       //Apply data model indexes
-      function (arg: number, cb: ( err: Error | null, res?: number) => void) {
+      function (arg: number, cb: (err: Error | null, res?: number) => void) {
         if (arg <= 0) {
           return cb(null, arg);
         }
@@ -620,7 +685,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
           return cb(null, 1);
         }
       },
-      function (arg: number, cb: ( err: Error | null, res?: number) => void) {
+      function (arg: number, cb: (err: Error | null, res?: number) => void) {
         if (arg > 0) {
           //log migration to database
           self.execute('INSERT INTO migrations("appliesTo", "model", "version", "description") VALUES (?,?,?,?)', [migration.appliesTo,
@@ -642,8 +707,8 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       callback(err);
     });
   }
-  
-  migrateAsync(obj: LocalDataTableUpgrade): Promise<void> {
+
+  migrateAsync(obj: LocalSqlTableUpgrade): Promise<void> {
     return new Promise((resolve, reject) => {
       this.migrate(obj, (err?: Error) => {
         if (err) {
@@ -653,9 +718,9 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       });
     });
   }
-  
+
   selectIdentity(entity: string, attribute: string, callback: (err?: Error, value?: number) => void): void {
-    const migration: LocalDataTableUpgrade = {
+    const migration: LocalSqlTableUpgrade = {
       appliesTo: 'increment_id',
       model: 'increments',
       description: 'Increments migration (version 1.0)',
@@ -680,7 +745,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
         if (result.length === 0) {
           //get max value by querying the given entity
           const q = new QueryExpression().from(entity).select([new QueryField().max(attribute)]);
-          void this.execute(q, null, (err?: Error, result?: Record<string, unknown>[] ) => {
+          void this.execute(q, null, (err?: Error, result?: Record<string, unknown>[]) => {
             if (err) {
               return callback(err);
             }
@@ -723,12 +788,157 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       });
     });
   }
-  
-  table(name: string) {
-    return new LocalSqlDataTable(this, name);
+
+  table(name: string): LocalSqlTable {
+    // return new LocalSqlDataTable(this, name);
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    return {
+      exists: function (callback: (err?: Error, value?: boolean) => void): void {
+        void self.execute('SELECT COUNT(*) count FROM sqlite_master WHERE name=? AND type=\'table\';', [name], (err, results?: { count: number }[]) => {
+          if (err) {
+            return callback(err);
+          }
+          const [result] = results || [];
+          return callback(null, (result.count > 0));
+        });
+      },
+      existsAsync: function (): Promise<boolean> {
+        return new Promise((resolve, reject) => {
+          this.exists((err?: Error, value?: boolean) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(value);
+          });
+        });
+      },
+      version(callback: (err?: Error, value?: string) => void): void {
+        void self.execute('SELECT MAX(version) AS version FROM migrations WHERE appliesTo=?', [this.name], (err?: Error, results?: { version: string }[]) => {
+          if (err) {
+            return callback(err);
+          }
+          if (results.length === 0) {
+            callback(null, '0.0');
+          }
+          return callback(null, results[0].version || '0.0');
+        });
+      },
+      versionAsync: function () {
+        return new Promise((resolve, reject) => {
+          this.version((err?: Error, value?: string) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(value);
+          });
+        });
+      },
+      columns: function (callback: (err?: Error, results?: LocalSqlColumn[]) => void): void {
+        void self.execute('PRAGMA table_info(?)', [name], (err?: Error, columns?: { name: string, type: string, cid: number, notnull: number, pk: number }[]) => {
+          if (err) {
+            return callback(err);
+          }
+          const results = columns.map((item) => {
+            const col: LocalSqlColumn = { name: item.name, ordinal: item.cid, type: item.type, nullable: (item.notnull ? false : true), primary: (item.pk === 1) };
+            const matches = /(\w+)\((\d+),(\d+)\)/.exec(item.type);
+            if (matches) {
+              //extract max length attribute (e.g. integer(2,0) etc)
+              if (parseInt(matches[2]) > 0) {
+                col.size = parseInt(matches[2]);
+              }
+              //extract scale attribute from field (e.g. integer(2,0) etc)
+              if (parseInt(matches[3]) > 0) {
+                col.scale = parseInt(matches[3]);
+              }
+            }
+            return col;
+          });
+          return callback(null, results);
+        });
+      },
+      columnsAsync: function (): Promise<LocalSqlColumn[]> {
+        return new Promise((resolve, reject) => {
+          this.columns((err?: Error, res?: LocalSqlColumn[]) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(res);
+          });
+        });
+      },
+      create: function (fields: LocalSqlField[], callback: (err?: Error) => void): void {
+        //create table
+        const containerWithFormat = self as unknown as { format: (format: string, arg: LocalSqlField) => string };
+        const strFields = fields.map((field) => {
+          return containerWithFormat.format('"%f" %t', field);
+        }).join(', ');
+        const sql = `CREATE TABLE "${name}" (${strFields})`;
+        void self.execute(sql, null, (err?: Error) => {
+          if (err) {
+            return callback(err);
+          }
+          return callback();
+        });
+      },
+      createAsync: function (fields: LocalSqlField[]) {
+        return new Promise((resolve, reject) => {
+          this.create(fields, (err?: Error) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(void 0);
+          });
+        });
+      },
+      add: function (fields: LocalSqlField[], callback: (err?: Error) => void): void {
+        if (Array.isArray(fields) === false) {
+          //invalid argument exception
+          return callback(new Error('Invalid argument type. Expected Array.'));
+        }
+        if (fields.length === 0) {
+          // do nothing
+          return callback();
+        }
+        // generate SQL statement
+        const formatter = self.getFormatter();
+        const escapedTable = formatter.escapeName(name);
+        const containerWithFormatType = self as unknown as { formatType: (arg: LocalSqlField) => string };
+        const sql = fields.map((field) => {
+          const escapedField = formatter.escapeName(field.name);
+          return `ALTER TABLE ${escapedTable} ADD COLUMN ${escapedField} ${containerWithFormatType.formatType(field)}`;
+        }).join(';');
+        self.execute(sql, [], function (err?: Error) {
+          callback(err);
+        });
+      },
+      addAsync: function (fields: LocalSqlField[]): Promise<void> {
+        return new Promise((resolve, reject) => {
+          this.add(fields, (err?: Error) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(void 0);
+          });
+        });
+      },
+      change: function (fields: LocalSqlField[], callback: (err?: Error) => void): void {
+        return callback(new Error('Full table migration is not yet implemented.'));
+      },
+      changeAsync: function (fields: LocalSqlField[]) {
+        return new Promise((resolve, reject) => {
+          this.change(fields, (err?: Error) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(void 0);
+          });
+        });
+      }
+    } as LocalSqlTable;
   }
 
-  view(name: string) {
+  view(name: string): LocalSqlView {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     return {
@@ -750,7 +960,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
           });
         });
       },
-      
+
       drop: function (callback: (err?: Error) => void) {
         void self.open((err) => {
           if (err) {
@@ -808,7 +1018,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
           });
         });
       }
-    };
+    } as LocalSqlView;
   }
 
   @before(({ target, args }, callback) => {
@@ -841,7 +1051,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
   })
   // eslint-disable-next-line @typescript-eslint/consistent-indexed-object-style
   execute(query: string | QueryExpression | unknown, values: unknown[], callback: (err?: Error, result?: unknown | { [k: string]: unknown }) => void): void {
-    
+
     let sql: string;
     try {
       if (typeof query === 'string') {
@@ -867,7 +1077,21 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
           ((executeSql: string, executeCallback: (err?: Error, result?: unknown) => void) => {
             try {
               const results = this.rawConnection.exec(executeSql);
-              return executeCallback(null, results);
+              const [result] = results;
+              if (result && result.columns && result.values) {
+                const keys = result.columns;
+                if (keys.length === 0) {
+                  return executeCallback(null, []);
+                }
+                const values = result.values.map((item) => {
+                  return keys.reduce(function (acc, key, index) {
+                    acc[key] = item[index];
+                    return acc;
+                  }, {} as Record<string, unknown>);
+                });
+                return executeCallback(null, values);
+              }
+              return executeCallback(null, []);
             } catch (executeError) {
               return executeCallback(executeError);
             }
@@ -994,12 +1218,12 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
     });
   }
 
-  indexes(table: string) {
+  indexes(table: string): LocalSqlIndexCollection {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     const formatter = this.getFormatter();
     return {
-      list: function(callback: (err?: Error, results?: { name: string, columns: string[] }[]) => void) {
+      list: function (callback: (err?: Error, results?: { name: string, columns: string[] }[]) => void) {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         const thisArg: { _indexes?: { name: string, columns: string[] }[] } = this;
         if (Object.prototype.hasOwnProperty.call(thisArg, '_indexes')) {
@@ -1046,7 +1270,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
           });
         });
       },
-      
+
       create: function (name: string, columns: string[], callback: (err?: Error) => void) {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         const thisArg = this;
@@ -1084,7 +1308,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
                 //and create it
                 self.execute(sqlCreateIndex, [], callback);
               });
-            } 
+            }
             return callback();
           }
         });
@@ -1103,7 +1327,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
         if (typeof name !== 'string') {
           return callback(new Error('Name must be a valid string.'));
         }
-        void self.execute(`PRAGMA INDEX_LIST(${formatter.escape(table)})`, [], function (err, result: {name: string}[]) {
+        void self.execute(`PRAGMA INDEX_LIST(${formatter.escape(table)})`, [], function (err, result: { name: string }[]) {
           if (err) {
             return callback(err);
           }
@@ -1125,7 +1349,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
           });
         });
       }
-    };
+    } as LocalSqlIndexCollection;
   }
 
   getFormatter() {
@@ -1135,6 +1359,12 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
 }
 
 export {
-  LocalDataTableUpgrade,
+  LocalSqlTableUpgrade,
+  LocalSqlColumn,
+  LocalSqlField,
+  LocalSqlTable,
+  LocalSqlIndex,
+  LocalSqlIndexCollection,
+  LocalSqlView,
   LocalSqlAdapter
 }
