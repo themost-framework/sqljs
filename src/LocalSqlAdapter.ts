@@ -81,12 +81,8 @@ declare interface LocalSqlView {
   dropAsync(): Promise<void>;
 }
 
-/**
- *
- * @param {{target: SqliteAdapter, query: string|QueryExpression, results: Array<*>}} event
- */
 // eslint-disable-next-line @typescript-eslint/consistent-indexed-object-style
-async function onReceivingJsonObject(event: { target: unknown, query: string | QueryExpression, results: { [k: string]: unknown }[] }): Promise<void> {
+async function onReceivingJsonObject(event: { target: LocalSqlAdapter, query: string | QueryExpression, params: unknown[], results: { [k: string]: unknown }[] }): Promise<void> {
   if (typeof event.query === 'object' && event.query.$select) {
     // try to identify the usage of a $jsonObject dialect and format result as JSON
     const { $select: select } = event.query;
@@ -124,9 +120,9 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
   public rawConnection?: Database;
 
   public static readonly instances = new Map<string, Database>();
-  public executing: AsyncSeriesEventEmitter<unknown>;
-  public executed: AsyncSeriesEventEmitter<unknown>;
-  public loading: AsyncSeriesEventEmitter<{ database?: string, buffer?: ArrayLike<number>; }>;
+  public executing: AsyncSeriesEventEmitter<{target: LocalSqlAdapter, query: string | QueryExpression, params: unknown[]}>;
+  public executed: AsyncSeriesEventEmitter<{target: LocalSqlAdapter, query: string | QueryExpression, params: unknown[], results?: unknown[]}>;
+  public loading: AsyncSeriesEventEmitter<unknown>;
   transaction: boolean;
   public loaded: AsyncSeriesEventEmitter<unknown>;
   
@@ -155,9 +151,8 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       return;
     }
     const SQL: SqlJsStatic = await initSqlJs();
-    const event = { database: this.options?.database, buffer: this.options?.buffer as ArrayLike<number> };
-    await this.loading.emit(event);
-    LocalSqlAdapter.instances.set(name, new SQL.Database(event.buffer));
+    await this.loading.emit(void 0);
+    LocalSqlAdapter.instances.set(name, new SQL.Database(this.options?.buffer || new Uint8Array()));
     await this.loaded.emit(void 0);
     this.rawConnection = LocalSqlAdapter.instances.get(name);
     // add custom functions
