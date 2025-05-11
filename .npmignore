@@ -3,7 +3,10 @@ node_modules
 
 # test
 spec
+jest.config.cjs
 jest.config.ts
+global.setup.ts
+global.teardown.ts
 
 # eslint
 eslint.config.mjs
@@ -30,3 +33,4 @@ babel.config.js
 
 # rollup
 rollup.config.mjs
+rollup.config.cjs
