@@ -11,7 +11,14 @@
     "test": "jest --config jest.config.cjs",
     "build": "rimraf dist && rollup --config rollup.config.cjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/themost-framework/sqljs.git"
+  },
   "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/themost-framework/sqljs/issues"
+  },
   "peerDependencies": {
     "@themost/query": "^2.14.11"
   },
