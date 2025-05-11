@@ -64,7 +64,8 @@ class LocalSqlFormatter extends SqlFormatter {
     static readonly NAME_FORMAT = '"$1"';
     constructor() {
         super();
-        this.settings.nameFormat = LocalSqlFormatter.NAME_FORMAT
+        this.settings.nameFormat = LocalSqlFormatter.NAME_FORMAT;
+        this.settings.forceAlias = true;
     }
 
     /**
@@ -326,6 +327,10 @@ class LocalSqlFormatter extends SqlFormatter {
     $jsonObject(...expr: unknown[]): string {
         // expected an array of QueryField objects
         const args: string[] = expr.reduce((previous: string[], current: Record<string, unknown>) => {
+            if (typeof current === 'string') {
+                previous.push(this.escape(current), this.escapeName(current));
+                return previous;
+            }
             // get the first key of the current object
             let [name] = Object.keys(current);
             let value;
