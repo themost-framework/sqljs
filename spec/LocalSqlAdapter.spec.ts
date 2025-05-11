@@ -5,8 +5,6 @@ import { expect } from '@jest/globals';
 import { LocalSqlAdapter } from "@themost/sql.js";
 import { fetch } from 'cross-fetch';
 import { QueryExpression } from '@themost/query';
-// import enc from 'crypto-js/enc-base64';
-// import crypto from 'crypto-js';
 
 describe('LocalSqlAdapter', () => {
     it('should create instance', () => {
@@ -19,17 +17,6 @@ describe('LocalSqlAdapter', () => {
         const db = new LocalSqlAdapter({
             buffer: new Uint8Array(buffer)
         });
-        // db.executed.subscribe(async (event) => {
-        //     if (event.query instanceof QueryExpression) {
-        //         if (event.query.$update) {
-        //             // get current database
-        //             const buffer = event.target.rawConnection.export();
-        //             const wordArray = crypto.lib.WordArray.create(buffer);
-        //             const base64String = enc.stringify(wordArray);
-        //             window.localStorage.setItem('local', base64String);
-        //         }
-        //     }
-        // });
         expect(db).toBeInstanceOf(LocalSqlAdapter);
         const Users = 'UserData';
         const exists = await db.view(Users).existsAsync();

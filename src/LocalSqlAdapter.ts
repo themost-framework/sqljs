@@ -179,7 +179,7 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       if (value == null) {
         return null;
       }
-      if (typeof value !== 'string') {
+      if (typeof value === 'string') {
         const str = value.toString();
         if (GuidRegex.test(str)) {
           return str;
