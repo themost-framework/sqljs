@@ -126,11 +126,15 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
   public static readonly instances = new Map<string, Database>();
   public executing: AsyncSeriesEventEmitter<unknown>;
   public executed: AsyncSeriesEventEmitter<unknown>;
+  public loading: AsyncSeriesEventEmitter<{ database?: string, buffer?: ArrayLike<number>; }>;
   transaction: boolean;
-
+  public loaded: AsyncSeriesEventEmitter<unknown>;
+  
   constructor(protected options?: { name?: string, database?: string, buffer?: ArrayLike<number>, retry?: number, retryInterval?: number }) {
     this.executing = new AsyncSeriesEventEmitter();
     this.executed = new AsyncSeriesEventEmitter();
+    this.loading = new AsyncSeriesEventEmitter<{ database?: string, buffer?: Uint8Array }>()
+    this.loaded = new AsyncSeriesEventEmitter();
     this.executed.subscribe(onReceivingJsonObject);
   }
 
@@ -151,7 +155,10 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
       return;
     }
     const SQL: SqlJsStatic = await initSqlJs();
-    LocalSqlAdapter.instances.set(name, new SQL.Database(this.options?.buffer))
+    const event = { database: this.options?.database, buffer: this.options?.buffer as ArrayLike<number> };
+    await this.loading.emit(event);
+    LocalSqlAdapter.instances.set(name, new SQL.Database(event.buffer));
+    await this.loaded.emit(void 0);
     this.rawConnection = LocalSqlAdapter.instances.get(name);
     // add custom functions
     // 1. uuid4
@@ -1177,9 +1184,9 @@ class LocalSqlAdapter implements LocalSqlAdapterBase {
     }
   }
 
-  executeAsync(query: string | QueryExpression | unknown, values?: unknown[]) {
+  executeAsync<T>(query: string | QueryExpression | unknown, values?: unknown[]): Promise<T[]> {
     return new Promise((resolve, reject) => {
-      void this.execute(query, values, (err, res) => {
+      void this.execute(query, values, (err?: Error, res?: T[]) => {
         if (err) {
           return reject(err);
         }
